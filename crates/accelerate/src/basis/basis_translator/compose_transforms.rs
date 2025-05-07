@@ -12,8 +12,9 @@
 
 use indexmap::{IndexMap, IndexSet};
 use pyo3::prelude::*;
+use qiskit_circuit::bit::QuantumRegister;
 use qiskit_circuit::circuit_instruction::OperationFromPython;
-use qiskit_circuit::imports::{GATE, PARAMETER_VECTOR, QUANTUM_REGISTER};
+use qiskit_circuit::imports::{GATE, PARAMETER_VECTOR};
 use qiskit_circuit::parameter_table::ParameterUuid;
 use qiskit_circuit::Qubit;
 use qiskit_circuit::{
@@ -50,10 +51,10 @@ pub(super) fn compose_transforms<'a>(
             .call1((&gate_name, num_params))?
             .extract()?;
 
-        let mut dag = DAGCircuit::new(py)?;
+        let mut dag = DAGCircuit::new()?;
         // Create the mock gate and add to the circuit, use Python for this.
-        let qubits = QUANTUM_REGISTER.get_bound(py).call1((gate_num_qubits,))?;
-        dag.add_qreg(py, &qubits)?;
+        let qubits = QuantumRegister::new_owning("q".to_string(), gate_num_qubits);
+        dag.add_qreg(qubits)?;
 
         let gate = GATE.get_bound(py).call1((
             &gate_name,
@@ -75,7 +76,7 @@ pub(super) fn compose_transforms<'a>(
             } else {
                 Some(gate_obj.params)
             },
-            gate_obj.extra_attrs,
+            gate_obj.label.map(|x| *x),
             #[cfg(feature = "cache_pygates")]
             Some(gate.into()),
         )?;
@@ -121,7 +122,7 @@ pub(super) fn compose_transforms<'a>(
                         op_node.bind(py),
                         &replace_dag,
                         None,
-                        true,
+                        None,
                     )?;
                 }
             }

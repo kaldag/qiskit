@@ -18,7 +18,6 @@ use pyo3::prelude::*;
 use rustworkx_core::petgraph::stable_graph::NodeIndex;
 use smallvec::{smallvec, SmallVec};
 
-use qiskit_circuit::circuit_instruction::ExtraInstructionAttributes;
 use qiskit_circuit::dag_circuit::{DAGCircuit, NodeType, Wire};
 use qiskit_circuit::operations::{ArrayType, Operation, OperationRef, Param, UnitaryGate};
 use qiskit_circuit::packed_instruction::PackedOperation;
@@ -63,37 +62,36 @@ pub fn split_2q_unitaries(
                 let k1r_arr = decomp.k1r_view();
                 let k1l_arr = decomp.k1l_view();
 
-                let insert_fn = |edge: &Wire| -> (PackedOperation, SmallVec<[Param; 3]>) {
-                    if let Wire::Qubit(qubit) = edge {
-                        if *qubit == qubits[0] {
-                            let mat: Matrix2<Complex64> = [
-                                [k1r_arr[[0, 0]], k1r_arr[[1, 0]]],
-                                [k1r_arr[[0, 1]], k1r_arr[[1, 1]]],
-                            ]
-                            .into();
-                            let k1r_gate = Box::new(UnitaryGate {
-                                array: ArrayType::OneQ(mat),
-                            });
-                            (PackedOperation::from_unitary(k1r_gate), smallvec![])
-                        } else {
-                            let mat: Matrix2<Complex64> = [
-                                [k1l_arr[[0, 0]], k1l_arr[[1, 0]]],
-                                [k1l_arr[[0, 1]], k1l_arr[[1, 1]]],
-                            ]
-                            .into();
-
-                            let k1l_gate = Box::new(UnitaryGate {
-                                array: ArrayType::OneQ(mat),
-                            });
-
-                            (PackedOperation::from_unitary(k1l_gate), smallvec![])
-                        }
+                let insert_fn = |edge: Wire| -> (PackedOperation, SmallVec<[Param; 3]>) {
+                    let Wire::Qubit(qubit) = edge else {
+                        panic!("must only be called on ops with no classical wires");
+                    };
+                    if qubit == qubits[0] {
+                        let mat: Matrix2<Complex64> = [
+                            [k1r_arr[[0, 0]], k1r_arr[[1, 0]]],
+                            [k1r_arr[[0, 1]], k1r_arr[[1, 1]]],
+                        ]
+                        .into();
+                        let k1r_gate = Box::new(UnitaryGate {
+                            array: ArrayType::OneQ(mat),
+                        });
+                        (PackedOperation::from_unitary(k1r_gate), smallvec![])
                     } else {
-                        unreachable!("This will only be called on ops with no classical wires.");
+                        let mat: Matrix2<Complex64> = [
+                            [k1l_arr[[0, 0]], k1l_arr[[1, 0]]],
+                            [k1l_arr[[0, 1]], k1l_arr[[1, 1]]],
+                        ]
+                        .into();
+
+                        let k1l_gate = Box::new(UnitaryGate {
+                            array: ArrayType::OneQ(mat),
+                        });
+
+                        (PackedOperation::from_unitary(k1l_gate), smallvec![])
                     }
                 };
                 dag.replace_node_with_1q_ops(py, node, insert_fn)?;
-                dag.add_global_phase(py, &Param::Float(decomp.global_phase))?;
+                dag.add_global_phase(&Param::Float(decomp.global_phase))?;
             }
         }
     }
@@ -148,7 +146,7 @@ pub fn split_2q_unitaries(
                         &[Qubit::new(mapping[index0])],
                         &[],
                         None,
-                        ExtraInstructionAttributes::default(),
+                        None,
                         #[cfg(feature = "cache_pygates")]
                         None,
                     )?;
@@ -158,11 +156,11 @@ pub fn split_2q_unitaries(
                         &[Qubit::new(mapping[index1])],
                         &[],
                         None,
-                        ExtraInstructionAttributes::default(),
+                        None,
                         #[cfg(feature = "cache_pygates")]
                         None,
                     )?;
-                    new_dag.add_global_phase(py, &Param::Float(decomp.global_phase + PI4))?;
+                    new_dag.add_global_phase(&Param::Float(decomp.global_phase + PI4))?;
                     continue; // skip the general instruction handling code
                 }
             }
@@ -180,7 +178,7 @@ pub fn split_2q_unitaries(
                 &mapped_qargs,
                 cargs,
                 inst.params.as_deref().cloned(),
-                inst.extra_attrs.clone(),
+                inst.label.as_ref().map(|x| x.to_string()),
                 #[cfg(feature = "cache_pygates")]
                 inst.py_op.get().map(|x| x.clone_ref(py)),
             )?;
